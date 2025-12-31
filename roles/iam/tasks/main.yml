@@ -1,5 +1,4 @@
 ---
-# tasks file for iam
 # roles/iam/tasks/main.yml
 - name: Create IAM Role for SSM
   community.aws.iam_role:
@@ -19,6 +18,6 @@
       - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
 
 - name: Create IAM Instance Profile
-  community.aws.iam_instance_profile:
+  amazon.aws.iam_instance_profile:
     name: "{{ prefix }}-ssm-profile"
     role: "{{ prefix }}-ssm-role"
