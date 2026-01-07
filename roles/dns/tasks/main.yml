@@ -1,21 +1,21 @@
 ---
-# 1. 생성된 ALB의 정보 실시간 조회 (Route 53 연결에 필요한 정보 추출)
-- name: Get ALB info for Route 53
+# 1. 로드밸런서(ALB) 정보 조회
+- name: Get Application Load Balancer info
   amazon.aws.elb_application_lb_info:
+    names: ["{{ prefix }}-alb"]
     region: "{{ region }}"
-    names:
-      - "{{ prefix }}-alb"
   register: alb_info
 
-# 2. Route 53 A 레코드(Alias) 생성 및 연결
-- name: Create Route 53 A record for the domain
+# 2. 조회된 정보를 바탕으로 Route 53 A 레코드 생성
+- name: Create Route 53 A record for the team
   amazon.aws.route53:
     state: present
-    zone: "{{ domain_name }}" # global_vars에 정의된 도메인 (예: project01.com)
-    record: "{{ domain_name }}"
+    zone: "{{ hosted_zone_name }}" # busanit.com
+    record: "{{ domain_name }}"     # 1-jo.busanit.com
     type: A
     alias: yes
-    # 조회한 ALB 정보에서 DNS 이름과 호스팅 영역 ID를 매핑
-    value: "{{ alb_info.load_balancers[0].dns_name }}"
+    # [교정] 에러 메시지에 따라 alias_dns_name 대신 value를 사용합니다.
+    value: "{{ alb_info.load_balancers[0].dns_name | lower }}."
     alias_hosted_zone_id: "{{ alb_info.load_balancers[0].canonical_hosted_zone_id }}"
     overwrite: yes
+    wait: yes

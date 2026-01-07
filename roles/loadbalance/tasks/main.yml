@@ -6,7 +6,7 @@
     filters: { "tag:Name": "{{ prefix }}-vpc" }
   register: vpc_info
 
-# 2. 젠킨스 인스턴스 정보 조회
+# 2. 젠킨스 인스턴스 정보 조회 (Running 상태)
 - name: Get Info for Jenkins Instance
   amazon.aws.ec2_instance_info:
     region: "{{ region }}"
@@ -43,26 +43,8 @@
     state: present
   register: was_tg
 
-# # 5. [수정] ALB 생성 (기본 리스너만 정의)
-# - name: Create Application Load Balancer
-#   amazon.aws.elb_application_lb: # 더 안정적인 amazon.aws 모듈 사용 권장
-#     name: "{{ prefix }}-alb"
-#     security_groups: ["{{ alb_sg_id }}"]
-#     subnets:
-#       - "{{ (subnet_results.results | selectattr('item.name', 'equalto', 'pub-a') | first).subnet.id }}"
-#       - "{{ (subnet_results.results | selectattr('item.name', 'equalto', 'pub-c') | first).subnet.id }}"
-#     region: "{{ region }}"
-#     listeners:
-#       - Protocol: HTTP
-#         Port: 80
-#         DefaultActions:
-#           - Type: forward
-#             TargetGroupArn: "{{ was_tg.target_group_arn }}"
-#     state: present
-#   register: alb_result
-
-# 5. [통합] ALB 생성 및 리스너 규칙을 한꺼번에 정의
-- name: Create ALB with Path Rules
+# 5. [최종 교정] 대문자 파라미터를 사용한 ALB 및 규칙 통합 생성
+- name: Create ALB with Path Rules Integrated
   amazon.aws.elb_application_lb:
     name: "{{ prefix }}-alb"
     security_groups: ["{{ alb_sg_id }}"]
@@ -70,13 +52,16 @@
       - "{{ (subnet_results.results | selectattr('item.name', 'equalto', 'pub-a') | first).subnet.id }}"
       - "{{ (subnet_results.results | selectattr('item.name', 'equalto', 'pub-c') | first).subnet.id }}"
     region: "{{ region }}"
+    state: present
+    wait: yes
+    wait_timeout: 600
     listeners:
       - Protocol: HTTP
         Port: 80
         DefaultActions:
           - Type: forward
             TargetGroupArn: "{{ was_tg.target_group_arn }}"
-        # [핵심] 별도 모듈 대신 여기서 Rules를 정의합니다.
+        # [에러 메시지 기반 수정] 반드시 대문자로 시작해야 합니다.
         Rules:
           - Priority: 1
             Conditions:
@@ -85,5 +70,4 @@
             Actions:
               - Type: forward
                 TargetGroupArn: "{{ jenkins_tg.target_group_arn }}"
-    state: present
   register: alb_result

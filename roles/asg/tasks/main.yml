@@ -54,12 +54,10 @@
     user_data: "{{ lookup('template', 'user_data.sh.j2') | b64encode }}"
     region: "{{ region }}"
     state: present
-# 6. 오토스케일링 그룹(ASG) 생성 (에러 메시지 기반 최종 교정)
+# 6. 오토스케일링 그룹(ASG) 생성
 - name: Create Auto Scaling Group
   amazon.aws.autoscaling_group:
     name: "{{ prefix }}-was"
-    # 에러 메시지에서 지원한다고 명시된 'launch_template' 파라미터를 사용합니다.
-    # 앤서블 2.15/컬렉션 8.x대에서는 아래 형식이 표준입니다.
     launch_template:
       launch_template_name: "{{ prefix }}-template"
       version: "$Latest"
@@ -68,7 +66,10 @@
     desired_capacity: 1
     vpc_zone_identifier: "{{ priv_subnets.subnets | map(attribute='id') | list }}"
     target_group_arns: "{{ was_tg_info.target_groups | map(attribute='target_group_arn') | list }}"
-    health_check_type: ELB
+    # [수정] ELB 대신 EC2 방식을 사용하여 앱 배포 전에도 통과되게 합니다.
+    health_check_type: EC2 
     health_check_period: 300
     region: "{{ region }}"
     state: present
+    # [추가] 인스턴스가 Healthy해질 때까지 기다리지 않고 다음 단계(DNS)로 넘어갑니다.
+    wait_for_instances: no

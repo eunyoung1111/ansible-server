@@ -4,10 +4,11 @@
   vars_files:
     - ./global_vars/all_vars
   roles:
-    - network      # 1. VPC, Subnet, IGW, NAT
-    - iam          # 2. IAM Role & Profile (CodeDeploy/SSM 권한 포함)
-    - security     # 3. 보안 그룹 (Description 및 8080 포트 설정)
-    - jenkins      # 5. 젠킨스 서버 인스턴스 생성 및 도커 설치
-    - loadbalance  # 4. ALB 및 대상 그룹(TG) 생성 (규칙 분리 적용)
-    - asg          # 6. [누락 추가] WAS 오토스케일링 및 CPU 70% 정책
-    - dns          # 7. [누락 추가] Route 53 A 레코드(Alias) 연결
+    - network
+    - iam
+    - security
+    - jenkins
+    - loadbalance
+    - asg
+    
+    - { role: dns, tags: ["dns"] }
