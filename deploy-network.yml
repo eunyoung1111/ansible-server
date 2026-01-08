@@ -4,11 +4,11 @@
   vars_files:
     - ./global_vars/all_vars
   roles:
-    - network
-    - iam
-    - security
-    - jenkins
-    - loadbalance
-    - asg
-    
+    - { role: network, tags: ["network"] }
+    - { role: iam, tags: ["iam"] }
+    - { role: security, tags: ["security"] }
+    - { role: jenkins, tags: ["jenkins"] }
+        
+    - { role: loadbalance, tags: ["loadbalance"] }
+    - { role: asg, tags: ["asg"] }
     - { role: dns, tags: ["dns"] }

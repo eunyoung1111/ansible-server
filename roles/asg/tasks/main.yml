@@ -54,10 +54,13 @@
     user_data: "{{ lookup('template', 'user_data.sh.j2') | b64encode }}"
     region: "{{ region }}"
     state: present
-# 6. 오토스케일링 그룹(ASG) 생성
+
+
+# 6. 오토스케일링 그룹(ASG) 생성 (문법 및 이름 교정)
 - name: Create Auto Scaling Group
   amazon.aws.autoscaling_group:
-    name: "{{ prefix }}-was"
+    # [중요] cleanup.yml에서 지울 이름과 정확히 일치시켜야 합니다.
+    name: "{{ prefix }}-was-asg" 
     launch_template:
       launch_template_name: "{{ prefix }}-template"
       version: "$Latest"
@@ -66,10 +69,13 @@
     desired_capacity: 1
     vpc_zone_identifier: "{{ priv_subnets.subnets | map(attribute='id') | list }}"
     target_group_arns: "{{ was_tg_info.target_groups | map(attribute='target_group_arn') | list }}"
-    # [수정] ELB 대신 EC2 방식을 사용하여 앱 배포 전에도 통과되게 합니다.
     health_check_type: EC2 
     health_check_period: 300
     region: "{{ region }}"
     state: present
-    # [추가] 인스턴스가 Healthy해질 때까지 기다리지 않고 다음 단계(DNS)로 넘어갑니다.
     wait_for_instances: no
+    # [교정] 태그는 반드시 모듈 설정 내부에 포함되어야 합니다.
+    tags:
+      - Key: Name
+        Value: "{{ prefix }}-app"
+        PropagateAtLaunch: true

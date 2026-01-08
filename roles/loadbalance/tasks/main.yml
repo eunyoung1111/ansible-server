@@ -6,7 +6,22 @@
     filters: { "tag:Name": "{{ prefix }}-vpc" }
   register: vpc_info
 
-# 2. 젠킨스 인스턴스 정보 조회 (Running 상태)
+# 2. ALB용 보안 그룹 정보 조회 (alb_sg_id 정의 에러 방지)
+- name: Get ALB Security Group info
+  amazon.aws.ec2_security_group_info:
+    region: "{{ region }}"
+    filters: { "group-name": "{{ prefix }}-alb-sg" }
+  register: alb_sg_info
+
+# 3. 퍼블릭 서브넷 정보 조회 (ALB는 퍼블릭에 위치해야 함)
+- name: Get Public Subnet info
+  amazon.aws.ec2_vpc_subnet_info:
+    region: "{{ region }}"
+    filters:
+      "tag:Name": ["{{ prefix }}-pub-a", "{{ prefix }}-pub-c"]
+  register: pub_subnets
+
+# 4. 젠킨스 인스턴스 정보 조회 (Running 상태)
 - name: Get Info for Jenkins Instance
   amazon.aws.ec2_instance_info:
     region: "{{ region }}"
@@ -15,7 +30,7 @@
       instance-state-name: ["running"]
   register: jenkins_info
 
-# 3. 젠킨스용 대상 그룹 생성
+# 5. 젠킨스용 대상 그룹 생성
 - name: Create Jenkins Target Group
   community.aws.elb_target_group:
     name: "{{ prefix }}-jenkins-tg"
@@ -25,12 +40,12 @@
     region: "{{ region }}"
     health_check_path: /jenkins/login
     health_check_protocol: HTTP
-    targets:
-      - Id: "{{ jenkins_info.instances[0].instance_id }}"
+    # 인스턴스가 조회되었을 때만 대상을 등록합니다.
+    targets: "{{ [{'Id': jenkins_info.instances[0].instance_id}] if jenkins_info.instances | length > 0 else [] }}"
     state: present
   register: jenkins_tg
 
-# 4. WAS용 대상 그룹 생성
+# 6. WAS용 대상 그룹 생성 (오토스케일링 그룹에서 사용)
 - name: Create WAS Target Group
   community.aws.elb_target_group:
     name: "{{ prefix }}-was-tg"
@@ -43,25 +58,23 @@
     state: present
   register: was_tg
 
-# 5. [최종 교정] 대문자 파라미터를 사용한 ALB 및 규칙 통합 생성
+# 7. [최종] ALB 생성 및 리스너/규칙 통합 설정
 - name: Create ALB with Path Rules Integrated
   amazon.aws.elb_application_lb:
     name: "{{ prefix }}-alb"
-    security_groups: ["{{ alb_sg_id }}"]
-    subnets:
-      - "{{ (subnet_results.results | selectattr('item.name', 'equalto', 'pub-a') | first).subnet.id }}"
-      - "{{ (subnet_results.results | selectattr('item.name', 'equalto', 'pub-c') | first).subnet.id }}"
+    # 조회한 보안 그룹 ID와 서브넷 ID 리스트를 사용합니다.
+    security_groups: ["{{ alb_sg_info.security_groups[0].group_id }}"]
+    subnets: "{{ pub_subnets.subnets | map(attribute='id') | list }}"
     region: "{{ region }}"
     state: present
     wait: yes
-    wait_timeout: 600
     listeners:
       - Protocol: HTTP
         Port: 80
         DefaultActions:
           - Type: forward
             TargetGroupArn: "{{ was_tg.target_group_arn }}"
-        # [에러 메시지 기반 수정] 반드시 대문자로 시작해야 합니다.
+        # [SAA 핵심] 경로 기반 라우팅 규칙 설정
         Rules:
           - Priority: 1
             Conditions:
