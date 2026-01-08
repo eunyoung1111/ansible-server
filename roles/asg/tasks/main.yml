@@ -41,50 +41,55 @@
     filters:
       "tag:Name": ["{{ prefix }}-priv-a", "{{ prefix }}-priv-c"]
   register: priv_subnets
-
 # 5. 시작 템플릿(Launch Template) 생성
 - name: Create Launch Template
   amazon.aws.ec2_launch_template:
     name: "{{ prefix }}-template"
-    # ... 중략 ...
-    # 수정: 'template' 파일이 아니라 아래 정의한 'string' 변수를 가져오도록 변경
-    user_data: "{{ user_data_script | b64encode }}" 
+    image_id: "{{ (al2023_ami.images | sort(attribute='creation_date') | last).image_id }}"
+    instance_type: "{{ instance_type }}"
+    key_name: "{{ key_name }}"
+    iam_instance_profile: "{{ prefix }}-ec2-profile"
+    security_group_ids: ["{{ was_sg_info.security_groups[0].group_id }}"]
+    # 멱등성 문제를 해결하기 위해 내부 변수를 직접 참조합니다.
+    user_data: "{{ user_data_script | b64encode }}"
+    # [추가] 인스턴스 목록에 이름이 뜨게 하는 설정입니다.
+    tag_specifications:
+      - resource_type: instance
+        tags:
+          Name: "{{ prefix }}-app"
     region: "{{ region }}"
     state: present
   vars:
     user_data_script: |
       #!/bin/bash
-      # 1. Amazon Linux 2023 도커 설치
+      # 1. Amazon Linux 2023 도커 및 도구 설치
       dnf update -y
-      dnf install -y docker
+      dnf install -y docker ruby wget
       systemctl start docker
       systemctl enable docker
       usermod -aG docker ec2-user
 
-      # 2. 도커 컴포즈 V2 플러그인 설치 (이게 핵심!)
+      # 2. 도커 컴포즈 V2 플러그인 설치
       mkdir -p /usr/local/lib/docker/cli-plugins
       curl -SL https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
       chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-      # 3. 경로 심볼릭 링크
+      # 3. 경로 심볼릭 링크 (어떤 명령어로든 실행되게 설정)
       ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
-      ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker
       
-      # 4. CodeDeploy 에이전트 설치 (기존에 있던 내용도 포함시켜야 함!)
-      dnf install -y ruby wget
+      # 4. CodeDeploy 에이전트 설치
       cd /home/ec2-user
       wget https://aws-codedeploy-ap-northeast-2.s3.ap-northeast-2.amazonaws.com/latest/install
       chmod +x ./install
       ./install auto
-      
-# 6. 오토스케일링 그룹(ASG) 생성 (문법 및 이름 교정)
+
+# 6. 오토스케일링 그룹(ASG) 생성
 - name: Create Auto Scaling Group
   amazon.aws.autoscaling_group:
-    # [중요] cleanup.yml에서 지울 이름과 정확히 일치시켜야 합니다.
     name: "{{ prefix }}-was-asg" 
     launch_template:
       launch_template_name: "{{ prefix }}-template"
-      version: "$Latest"
+      version: "$Latest" # 최신 버전의 템플릿을 항상 사용합니다.
     min_size: 1
     max_size: 3
     desired_capacity: 1
@@ -95,8 +100,7 @@
     region: "{{ region }}"
     state: present
     wait_for_instances: no
-    # [교정] 태그는 반드시 모듈 설정 내부에 포함되어야 합니다.
     tags:
       - Key: Name
         Value: "{{ prefix }}-app"
-        PropagateAtLaunch: true
+        PropagateAtLaunch: true # 생성되는 모든 인스턴스에 태그를 전파합니다.
