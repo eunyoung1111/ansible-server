@@ -45,20 +45,26 @@
 - name: Create Launch Template
   amazon.aws.ec2_launch_template:
     name: "{{ prefix }}-template"
+    # [수정] 템플릿 자체에도 태그를 달아 관리하기 편하게 합니다.
+    tags:
+      Name: "{{ prefix }}-template"
     image_id: "{{ (al2023_ami.images | sort(attribute='creation_date') | last).image_id }}"
     instance_type: "{{ instance_type }}"
     key_name: "{{ key_name }}"
     iam_instance_profile: "{{ prefix }}-ec2-profile"
     security_group_ids: ["{{ was_sg_info.security_groups[0].group_id }}"]
-    # 멱등성 문제를 해결하기 위해 내부 변수를 직접 참조합니다.
     user_data: "{{ user_data_script | b64encode }}"
-    # [추가] 인스턴스 목록에 이름이 뜨게 하는 설정입니다.
     tag_specifications:
       - resource_type: instance
         tags:
-          Name: "{{ prefix }}-app"
+          Name: "{{ prefix }}-app" # 인스턴스 이름
+          Project: "PetClinic"
+      - resource_type: volume
+        tags:
+          Name: "{{ prefix }}-app-disk" # 볼륨 이름도 같이 지정 (SAA 추천)
     region: "{{ region }}"
     state: present
+  register: lt_info # 생성된 템플릿 정보를 기록
   vars:
     user_data_script: |
       #!/bin/bash
@@ -69,19 +75,21 @@
       systemctl enable docker
       usermod -aG docker ec2-user
 
-      # 2. 도커 컴포즈 V2 플러그인 설치
-      mkdir -p /usr/local/lib/docker/cli-plugins
-      curl -SL https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
-      chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+      # 2. 도커 컴포즈 V2 플러그인 설치 (표준 경로로 변경)
+      mkdir -p /usr/lib/docker/cli-plugins
+      curl -SL https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-linux-x86_64 -o /usr/lib/docker/cli-plugins/docker-compose
+      chmod +x /usr/lib/docker/cli-plugins/docker-compose
 
-      # 3. 경로 심볼릭 링크 (어떤 명령어로든 실행되게 설정)
-      ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+      # 3. 심볼릭 링크 생성 (docker-compose와 docker compose 모두 작동하게 함)
+      ln -sf /usr/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
       
       # 4. CodeDeploy 에이전트 설치
       cd /home/ec2-user
       wget https://aws-codedeploy-ap-northeast-2.s3.ap-northeast-2.amazonaws.com/latest/install
       chmod +x ./install
       ./install auto
+      systemctl start codedeploy-agent
+      systemctl enable codedeploy-agent
 
 # 6. 오토스케일링 그룹(ASG) 생성
 - name: Create Auto Scaling Group
@@ -89,18 +97,19 @@
     name: "{{ prefix }}-was-asg" 
     launch_template:
       launch_template_name: "{{ prefix }}-template"
-      version: "$Latest" 
+      version: "$Latest" # 항상 최신 버전의 템플릿을 쓰도록 강제
     min_size: 1
     max_size: 3
     desired_capacity: 1
     vpc_zone_identifier: "{{ priv_subnets.subnets | map(attribute='id') | list }}"
     target_group_arns: "{{ was_tg_info.target_groups | map(attribute='target_group_arn') | list }}"
-    health_check_type: EC2 
+    # [SAA 추천] WAS는 앱 상태가 중요하므로 EC2가 아닌 ELB(ALB) 기준으로 체크하세요!
+    health_check_type: ELB 
     health_check_period: 300
     region: "{{ region }}"
     state: present
-    wait_for_instances: no
+    # [태그 전파] 이 부분은 유지하되, 시작 템플릿과 이름을 일치시킵니다.
     tags:
       - Key: Name
         Value: "{{ prefix }}-app"
-        PropagateAtLaunch: true # 생성되는 모든 인스턴스에 태그를 전파합니다.
+        PropagateAtLaunch: true
