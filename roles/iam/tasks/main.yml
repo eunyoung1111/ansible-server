@@ -1,8 +1,9 @@
 ---
-# 1. EC2 통합 역할 (SSM + S3 + CodeDeploy)
+# 1. EC2 전용 통합 역할 (SSM + S3 + CodeDeploy)
 - name: Create IAM Role for EC2
   community.aws.iam_role:
     name: "{{ prefix }}-ec2-role"
+    # 신뢰관계 : EC2만 이 역할을가질 수 있음 
     assume_role_policy_document: |
       {
         "Version": "2012-10-17",
@@ -13,12 +14,13 @@
       - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
       - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy
 
+# IAM 역할은 EC2에 바로 붙일 수 없음 = 프로파일에 담아서 붙이기
 - name: Create IAM Instance Profile
   amazon.aws.iam_instance_profile:
     name: "{{ prefix }}-ec2-profile"
     role: "{{ prefix }}-ec2-role"
 
-# 2. CodeDeploy 서비스 역할 (조건 8 필수)
+# 2. CodeDeploy 서비스 역할 (EC2, ASG 접근)
 - name: Create CodeDeploy Service Role
   community.aws.iam_role:
     name: "{{ prefix }}-code-deploy-service-role"
