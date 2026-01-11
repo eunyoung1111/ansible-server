@@ -6,15 +6,14 @@
     region: "{{ region }}"
   register: alb_info
 
-# 2. 조회된 정보를 바탕으로 Route 53 A 레코드 생성
+# 2. Route 53 A 레코드 생성
 - name: Create Route 53 A record for the team
   amazon.aws.route53:
     state: present
-    zone: "{{ hosted_zone_name }}" # busanit.com
-    record: "{{ domain_name }}"     # 1-jo.busanit.com
+    zone: "{{ hosted_zone_name }}"   # 관리할 도메인(busanit.com)
+    record: "{{ domain_name }}"      # 서비스할 주소(1-jo.busanit.com)
     type: A
-    alias: yes
-    # [교정] 에러 메시지에 따라 alias_dns_name 대신 value를 사용합니다.
+    alias: yes  # 별칭 레코드 사용
     value: "{{ alb_info.load_balancers[0].dns_name | lower }}."
     alias_hosted_zone_id: "{{ alb_info.load_balancers[0].canonical_hosted_zone_id }}"
     overwrite: yes
