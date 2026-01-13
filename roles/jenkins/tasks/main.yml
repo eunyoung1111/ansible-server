@@ -71,6 +71,7 @@
             context: .
           container_name: jenkins
           user: root
+          restart: always
           privileged: true
           ports:
             - 8080:8080
